@@ -7,6 +7,7 @@ library(plyr)
 library(tidyr)
 library(lubridate)
 library(dplyr)
+library(ggplot2)
 
 setwd('C:/Users/Paul Cho/Desktop/Bootcamp/project/shiny_e_com/')
 
@@ -171,11 +172,85 @@ po_master %>%
     GR_week = lubridate::as_datetime(PO_date))
 
 
+po_master %>% 
+  filter(GR_date<ymd('2018/08/29')) %>% 
+  mutate(delivered_week = lubridate::week(ymd(GR_date)),
+         delivered_year = lubridate::year(ymd(GR_date))) ->po_master
+
+# Write CSV ---------------------
+write.csv(po_master, file = "./datasets/po_master.csv")
 
 
-write.csv(po_master, file = "po_master.csv")
+po_master %>% 
+  select('delivered_week','delivered_year','POtoSO','SOtoGI','GItoGR') %>% 
+  gather('POtoSO','SOtoGI','GItoGR',key='LT',value=days )%>% 
+  na.omit() %>% 
+  group_by(delivered_year,delivered_week,LT) %>% 
+  summarise(mean2 = mean(days)) %>%
+  ungroup() -> LT2
+
+LT2
+
+po_master %>% 
+  group_by(delivered_year,delivered_week) %>% 
+  summarise(mean2 = median(POtoRDD)) -> deliveryDays
+
+mean(deliveryDays$mean2)
+
+deliveryDays %>% 
+  group_by(delivered_year) %>% 
+  summarise(mean(mean2))
+
+ggplot() +
+  geom_col(data=LT2[LT2$delivered_year==2016,],aes(x=delivered_week,y=mean2,fill=LT))+
+  geom_line(data=deliveryDays[deliveryDays$delivered_year==2016,],aes(x=delivered_week,y=mean2),linetype = "dashed",size = 1)+
+  geom_point() 
+
+ggplot() +
+  geom_col(data=LT2[LT2$delivered_year==2017,],aes(x=delivered_week,y=mean2,fill=LT))+
+  geom_line(data=deliveryDays[deliveryDays$delivered_year==2017,],aes(x=delivered_week,y=mean2),linetype = "dashed",size = 1)+
+  geom_point()
+
+ggplot() +
+  geom_col(data=LT2[LT2$delivered_year==2018,],aes(x=delivered_week,y=mean2,fill=LT))+
+  geom_line(data=deliveryDays[deliveryDays$delivered_year==2018,],aes(x=delivered_week,y=mean2),linetype = "dashed",size = 1)+
+  geom_point()
 
 
+
+# backorder ------------------------------------------------
+
+po_master %>% 
+  group_by(delivered_year, delivered_week) %>% 
+  mutate(orderCount = n(),
+         backorder = sum(GRvRDD<0),
+         backorder_ratio = backorder/orderCount) %>% 
+  select(product_category,c_state, seller_id, delivered_week, delivered_year,backorder, backorder_ratio, review_score) -> backorder_rate
+
+
+
+
+backorder_rate %>% 
+  ungroup() %>% 
+  mutate(delivered_year = as.factor(delivered_year))->backorder_rate
+
+ 
+ggplot()+
+  geom_line(data = backorder_rate, aes(x=delivered_week, y=backorder_ratio, color=delivered_year),size = 1) +
+  labs(title='Backorder Rate', x = 'Week Number', y = 'Ratio(%)', color = 'Year') +
+  coord_cartesian(xlim = c(2,51)) +
+  scale_y_continuous(labels=scales::percent)+
+  theme_bw() + 
+  theme(legend.key=element_blank(), plot.title = element_text(hjust = 0.5)) 
+
+
+
+
+
+
+
+backorder_rate %>% 
+  summarise(mean(review_score))
 
 library(tidyverse)
 library(googleVis)
