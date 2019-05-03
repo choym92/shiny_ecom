@@ -8,6 +8,9 @@ library(tidyr)
 library(lubridate)
 library(dplyr)
 library(ggplot2)
+library(ggmap)
+library(corrplot)
+library(ggpubr)
 
 setwd('C:/Users/Paul Cho/Desktop/Bootcamp/project/shiny_e_com/')
 
@@ -164,6 +167,7 @@ po_master %>%
   subset(select=-c(State.x,State.y))->po_master
 
 
+# Cleaning po_master AGAIN
 po_master %>% 
   filter(!order_status=='delivered') %>% 
   View()
@@ -171,16 +175,37 @@ po_master %>%
   mutate(
     GR_week = lubridate::as_datetime(PO_date))
 
-
 po_master %>% 
   filter(GR_date<ymd('2018/08/29')) %>% 
   mutate(delivered_week = lubridate::week(ymd(GR_date)),
          delivered_year = lubridate::year(ymd(GR_date))) ->po_master
+po_master %>% 
+  mutate(backorder = ifelse(GRvRDD<0,1,0),
+         delivered_year = as.factor(delivered_year),
+         purchase_week = lubridate::week(ymd(PO_date)),
+         purchase_year = lubridate::year(ymd(PO_date)),
+         purchase_year=as.factor(purchase_year)) -> po_master
+
+
 
 # Write CSV ---------------------
 write.csv(po_master, file = "./datasets/po_master.csv")
 
 
+
+
+# corr plot -------------------------------------------------------
+po_master %>%
+  na.omit ->temp
+temp[, unlist(lapply(temp, is.numeric))] -> temp 
+temp[,-c(9:22)] -> temp
+temp[,-c(1)] ->temp
+corrplot(cor(temp),type="upper")
+
+
+# Lead time analysis --------------------------------------------------
+
+# data cleaning
 po_master %>% 
   select('delivered_week','delivered_year','POtoSO','SOtoGI','GItoGR') %>% 
   gather('POtoSO','SOtoGI','GItoGR',key='LT',value=days )%>% 
@@ -189,37 +214,52 @@ po_master %>%
   summarise(mean2 = mean(days)) %>%
   ungroup() -> LT2
 
-LT2
-
 po_master %>% 
+  na.omit %>% 
   group_by(delivered_year,delivered_week) %>% 
-  summarise(mean2 = median(POtoRDD)) -> deliveryDays
+  summarise(m_POtoRDD = median(POtoRDD), m_POtoDO = mean(POtoSO + SOtoDO)) -> deliveryDays
 
-mean(deliveryDays$mean2)
-
-deliveryDays %>% 
-  group_by(delivered_year) %>% 
-  summarise(mean(mean2))
 
 ggplot() +
   geom_col(data=LT2[LT2$delivered_year==2016,],aes(x=delivered_week,y=mean2,fill=LT))+
-  geom_line(data=deliveryDays[deliveryDays$delivered_year==2016,],aes(x=delivered_week,y=mean2),linetype = "dashed",size = 1)+
-  geom_point() 
+  geom_line(data=deliveryDays[deliveryDays$delivered_year==2016,],aes(x=delivered_week,y=m_POtoRDD),linetype = "dashed",size = 1)
 
 ggplot() +
   geom_col(data=LT2[LT2$delivered_year==2017,],aes(x=delivered_week,y=mean2,fill=LT))+
-  geom_line(data=deliveryDays[deliveryDays$delivered_year==2017,],aes(x=delivered_week,y=mean2),linetype = "dashed",size = 1)+
-  geom_point()
+  geom_line(data=deliveryDays[deliveryDays$delivered_year==2017,],aes(x=delivered_week,y=m_POtoRDD),linetype = "dashed",size = 1) 
+
 
 ggplot() +
   geom_col(data=LT2[LT2$delivered_year==2018,],aes(x=delivered_week,y=mean2,fill=LT))+
-  geom_line(data=deliveryDays[deliveryDays$delivered_year==2018,],aes(x=delivered_week,y=mean2),linetype = "dashed",size = 1)+
-  geom_point()
+  geom_line(data=deliveryDays[deliveryDays$delivered_year==2018,],aes(x=delivered_week,y=m_POtoRDD),linetype = "dashed",size = 1)
 
+# Sales -----------------------------------------
+po_master %>%
+  na.omit %>% 
+  group_by(purchase_year, purchase_week) %>% 
+  summarise(sale = sum(price)) -> sales
+
+n<-dim(sales)[1]
+sales %>% 
+  arrange(purchase_year,purchase_week)->sales
+sales<-sales[1:(n-5),]
+
+
+ggplot()+
+  geom_line(data = sales, aes(x=purchase_week, y=sale/1000, color=purchase_year),size = 1)+
+  coord_cartesian(xlim = c(1,48)) +
+  theme_bw() +
+  labs(title='Sales History', x = 'Week Number', y = 'Brazilian Real in Thousands (R$)', color = 'Year') + 
+  theme(legend.key=element_blank(), plot.title = element_text(hjust = 0.5)) 
+
+View(po_master)
+po_master %>% 
+  filter(PO_date > 2018-06-06) %>% 
 
 
 # backorder ------------------------------------------------
 
+# data cleaning for getting backorder_rate df
 po_master %>% 
   group_by(delivered_year, delivered_week) %>% 
   mutate(orderCount = n(),
@@ -227,282 +267,92 @@ po_master %>%
          backorder_ratio = backorder/orderCount) %>% 
   select(product_category,c_state, seller_id, delivered_week, delivered_year,backorder, backorder_ratio, review_score) -> backorder_rate
 
-
-
-
 backorder_rate %>% 
   ungroup() %>% 
-  mutate(delivered_year = as.factor(delivered_year))->backorder_rate
+  na.omit() -> backorder_rate
 
- 
+# back-order rate per year
 ggplot()+
   geom_line(data = backorder_rate, aes(x=delivered_week, y=backorder_ratio, color=delivered_year),size = 1) +
   labs(title='Backorder Rate', x = 'Week Number', y = 'Ratio(%)', color = 'Year') +
-  coord_cartesian(xlim = c(2,51)) +
+  coord_cartesian(xlim = c(2,49)) +
   scale_y_continuous(labels=scales::percent)+
   theme_bw() + 
   theme(legend.key=element_blank(), plot.title = element_text(hjust = 0.5)) 
 
 
-
-
-
-
-
 backorder_rate %>% 
+  group_by(product_category) %>% 
+  summarise(count=n(),mean(review_score)) %>% 
+  arrange(desc(count))
+
+po_master %>%
+  filter(GRvRDD>0) %>% 
   summarise(mean(review_score))
 
-library(tidyverse)
-library(googleVis)
-library(leaflet)
-library(maps)
-library(datasets)
-
-reviews = read.csv('datasets/olist_order_reviews_dataset.csv',
-                   stringsAsFactors = F)
-payments = read.csv('datasets/olist_order_payments_dataset.csv',
-                    stringsAsFactors = F)
-orders = read.csv('datasets/olist_orders_dataset.csv',
-                  stringsAsFactors = F)
-customer = read.csv('datasets/olist_customers_dataset.csv',
-                    stringsAsFactors = F)
-products = read.csv('datasets/olist_products_dataset.csv',
-                    stringsAsFactors = F)
-items = read.csv('datasets/olist_order_items_dataset.csv',
-                 stringsAsFactors = F)
-sellers = read.csv('datasets/olist_sellers_dataset.csv',
-                   stringsAsFactors = F)
-geolocation = read.csv('datasets/olist_geolocation_dataset.csv',
-                       stringsAsFactors = F)
-categorynames = read.csv('datasets/product_category_name_translation.csv',
-                         stringsAsFactors = F)
 
 
-names(categorynames)
-names(categorynames) <- c('product_category_name','product_category_name_english')
-cleaned_cat = products %>%
-  select(product_id, product_category_name) %>%
-  left_join(categorynames, by = 'product_category_name') %>%
-  select(-2)
-
-
-cleaned_cat
+# Kmean Cluster for WH placement------------------------------
+# pick the best value for K meaning number of clusters
 
 
 
+# data cleaning and scaling
+po_master %>% 
+  select(c_lat,c_lng) %>% 
+  na.omit() ->cluster_df
+test1<-scale(na.omit(data.matrix(cluster_df)))
+data <- test1
+set.seed(123)
+# Finding Optimal Number of Clusters
+# The problem of determining what will be the best value for the number of clusters is often not very clear from the data set itself.
+# The elbow method looks at the percentage of variance explained as a function of the number of clusters:
+# The within cluster variation is calculated as the sum of the euclidean distance between the data points and their respective clusters 
+# adding a new cluster to the total variation within each cluster will be smaller than before and 
+# at some point the marginal gain will drop, giving an acute angle in the graph
 
-# Cleaning Geographical data
-cleaned_geo = geolocation %>%
-  select(geolocation_zip_code_prefix,
-         geolocation_lat,
-         geolocation_lng) %>%
-  group_by(geolocation_zip_code_prefix) %>%
-  summarise(lat = mean(geolocation_lat),
-            lng = mean(geolocation_lng))
+# to go depper in depth to Determine the optimal model, Bayesian Information Criterion for expectation-maximization is required
+# Compute and plot wss for k = 2 to k = 15.
+k.max <- 10
+wss <- sapply(1:k.max, function(k){kmeans(data, k, nstart=50,iter.max = 10 )$tot.withinss})
+plot(1:k.max, wss,type="b", pch = 19, frame = FALSE, xlab="Number of clusters K", ylab="Total within-clusters sum of squares")
 
-# Cleaning Payment Table
-cleaned_pay = payments %>%
-  group_by(order_id) %>%
-  summarise(value = sum(payment_value))
+# k-means with k=7
+clusters <- kmeans(cluster_df,7)
+# bring cluster data into df
+cluster_df$clusters <- as.factor(clusters$cluster)
 
-shipping_cost = items %>%
-  group_by(order_id) %>%
-  summarise(shipping_cost = sum(freight_value))
+# graph of the cluster result
+ggplot(cluster_df, aes(x=c_lng, y=c_lat, color=clusters)) +
+  geom_point(alpha=.5)+
+  coord_cartesian(xlim = c(-70,-35), ylim = c(-35,10)) + 
+  geom_density_2d() +
+  theme_bw()
 
-# Joining all tables
-joined_order = orders %>%
-  left_join(cleaned_pay, by = "order_id") %>%
-  left_join(customer, by = "customer_id") %>%
-  left_join(cleaned_geo,
-            by = c("customer_zip_code_prefix" = "geolocation_zip_code_prefix")) %>%
-  left_join(reviews, by = "order_id") %>%
-  left_join(shipping_cost, by = "order_id") %>%
-  left_join(items, by = "order_id") %>%
-  left_join(cleaned_cat, by = "product_id") %>%
-  select(
-    order_id,
-    customer_id,
-    order_status,
-    order_purchase_timestamp,
-    order_delivered_customer_date,
-    order_estimated_delivery_date,
-    value,
-    customer_unique_id,
-    customer_zip_code_prefix,
-    lat,
-    lng,
-    customer_city,
-    customer_state,
-    review_score,
-    product_id,
-    product_category_name_english,
-    shipping_cost
-  ) 
 
-# Cleaning Gaint Table Data
-final_order = joined_order %>%
-  filter(order_status != "canceled" & value > 0) %>%
-  rename(
-    purchase_date = order_purchase_timestamp,
-    delivered_date = order_delivered_customer_date,
-    est_delivered_date = order_estimated_delivery_date,
-    zip = customer_zip_code_prefix,
-    city = customer_city,
-    state = customer_state,
-    product_category = product_category_name_english
-  ) %>%
-  mutate(
-    purchase_date = lubridate::as_datetime(purchase_date),
-    delivered_date = lubridate::as_datetime(delivered_date),
-    est_delivered_date = lubridate::as_datetime(est_delivered_date)
-  ) %>%
-  distinct() %>%
-  mutate(
-    purchase_date = lubridate::date(purchase_date),
-    delivered_date = lubridate::date(delivered_date),
-    est_delivered_date = lubridate::date(est_delivered_date)
-  ) %>%
-  mutate(delivery_days = delivered_date - purchase_date,
-         diff_estdel = est_delivered_date - delivered_date) %>%
-  mutate(
-    product_category = case_when(
-      product_category == "home_appliances_2" ~ "home_appliances",
-      product_category == "home_comfort_2" ~ "home_comfort",
-      product_category == "home_confort" ~ "home_comfort",
-      product_category == "fashio_female_clothing" ~ "fashion_female_clothing",
-      product_category == "art" ~ "arts_and_craftmanship",
-      product_category == "drinks" |
-        product_category == "food" ~ "food_drink",
-      TRUE ~ as.character(product_category)
-    )
-  )
+# WH DATAFRAME
+WH_coordinate <-  as.data.frame(clusters$centers)
+city<- c('Nova Campinas', 'Serrita','Cocalinho', 'Avanhandava', 'Santana de Parnaíba', 'Muitos Capões','Ferros')
+WH_coordinate <- cbind(WH_coordinate,city)
+WH_coordinate
+
+
+# fiding bad sellers ------------------------------------------------
+
+po_master %>% 
+  na.omit %>% 
+  filter (DOvGI<0) %>% 
+  group_by(seller_id,delivered_year) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count))
+View(po_master)
+
+po_master %>% 
+  filter(seller_id == '7c67e1448b00f6e969d365cea6b010ab' & DOvGI<0) %>% 
+  View()
 
 
 
-# Generating df for geo analysis
-geo_df = final_order %>%
-  filter(
-    is.na(shipping_cost) == F &
-      is.na(delivery_days) == F &
-      is.na(review_score) == F,
-    is.na(diff_estdel) == F
-  ) %>%
-  group_by(state) %>%
-  summarise(
-    .
-    sales = sum(value),
-    salesperorder = round(sum(value) / n(), 2),
-    avg_shipcost = round(mean(shipping_cost), 2),
-    avg_shcsratio = round(mean(shipping_cost / value), 2),
-    avg_delidays = round(mean(delivery_days), 2),
-    avg_review = round(mean(review_score), 3),
-    avg_diffestdel = round(mean(diff_estdel), 2)
-  ) %>%
-  mutate(state = case_when(state == "AC" ~ "Acre",
-                           state == "AL" ~ "Alagoas",
-                           state == "AP" ~ "Amapá",
-                           state == "AM" ~ "Amazonas",
-                           state == "BA" ~ "Bahia", 
-                           state == "CE" ~ "Ceará", 
-                           state == "DF" ~ "Distrito Federal",
-                           state == "ES" ~ "Espírito Santo",
-                           state == "GO" ~ "Goiás",
-                           state == "MA" ~ "Maranhão", 
-                           state == "MT" ~ "Mato Grosso",
-                           state == "MS" ~ "Mato Grosso do Sul",
-                           state == "MG" ~ "Minas Gerais",
-                           state == "PA" ~ "Pará",
-                           state == "PB" ~ "Paraíba",
-                           state == "PR" ~ "Paraná",
-                           state == "PE" ~ "Pernambuco",
-                           state == "PI" ~ "Piauí",
-                           state == "RJ" ~ "Rio de Janeiro",
-                           state == "RN" ~ "Rio Grande do Norte",
-                           state == "RS" ~ "Rio Grande do Sul",
-                           state == "RO" ~ "Rondônia",
-                           state == "RR" ~ "Roraima",
-                           state == "SC" ~ "Santa Catarina",
-                           state == "SP" ~ "São Paulo",
-                           state == "SE" ~ "Sergipe",
-                           state == "TO" ~ "Tocantins",
-                           TRUE ~ as.character(state)))
-
-# Generating analysis by time
-time_df = final_order %>%
-  filter(is.na(purchase_date) == F) %>%
-  mutate(purchase_date = as.Date(purchase_date)) %>%
-  group_by(purchase_date) %>%
-  summarise(salesbyday = sum(value))
-
-# Generating analysis by categories
-detailed_cat_df = final_order %>%
-  filter(is.na(product_category) == F) %>%
-  group_by(product_category) %>%
-  summarise(
-    total_sales = sum(value),
-    salesperitem = round(sum(value) / n(), 2),
-    avg_review = round(mean(review_score), 3)) 
-
-detailed_cat_df = detailed_cat_df %>% 
-  mutate(category = case_when(product_category %in% c("health_beauty", "perfumery", "diapers_and_hygiene") ~ "Chemists.Drgustores", 
-                              product_category %in% c("watches_gifts", "fashion_bags_accessories", "luggage_accessories", "fashion_shoes", 
-                                                      "fashion_male_clothing", "fashion_female_clothing", "fashion_childrens_clothes", 
-                                                      "fashion_underwear_beach") ~ "Clothing",
-                              product_category %in% c("cool_stuff", "construction_tools_construction", "home_construction", "construction_tools_lights", 
-                                                      "construction_tools_safety", "arts_and_craftmanship", "costruction_tools_tools") ~ "DIY Goods",
-                              product_category %in% c("computers_accessories", "telephony", "computers", "electronics", "consoles_games", 
-                                                      "fixed_telephony", "air_conditioning", "tablets_printing_image", "cine_photo") ~ "Eletrical Goods",
-                              product_category %in% c("food_drink", "la_cuisine", "flowers") ~ "Food.Consumables", 
-                              product_category %in% c("furniture_decor", "office_furniture", "furniture_living_room", "home_comfort", 
-                                                      "kitchen_dining_laundry_garden_furniture", "small_appliances_home_oven_and_coffee", 
-                                                      "furniture_bedroom", "furniture_mattress_and_upholstery") ~ "Furniture.Carpets",
-                              product_category %in% c("garden_tools", "costruction_tools_garden") ~ "Garden Products", 
-                              product_category %in% c("bed_bath_table", "housewares", "auto", "toys", "baby", "stationery", "pet_shop",
-                                                      "pet_shop", "home_appliances", "small_appliances", "party_supplies", "christmas_supplies") ~ "Household.Textiles", 
-                              product_category %in% c("musical_instruments", "audio", "cds_dvds_musicals", "dvds_blu_ray", "music", "books_imported", 
-                                                      "books_technical", "books_general_interest") ~ "Music, Films.Books",
-                              product_category %in% c("sports_leisure", "fashion_sport") ~ "Sports Equipments", 
-                              product_category %in% c("market_place", "agro_industry_and_commerce", "industry_commerce_and_business", "signaling_and_security",
-                                                      "security_and_services") ~ "Services", 
-                              TRUE ~ "Other")) %>%
-  rename(sub_category = product_category)
-
-cat_df = detailed_cat_df %>%
-  group_by(category) %>%
-  summarise(total_sales = mean(total_sales), aov = mean(salesperitem), avg_review = mean(avg_review))
 
 
 
-# Categrorical sales by time
-time_df2 = time_df %>%
-  rename(sales = salesbyday) %>%
-  mutate(category = "Total Sales") %>%
-  select(purchase_date, category, sales)
-
-cat_time_df = final_order %>%
-  filter(is.na(product_category) == F) %>%
-  mutate(category = case_when(product_category %in% c("health_beauty", "perfumery", "diapers_and_hygiene") ~ "Chemists.Drgustores", 
-                              product_category %in% c("watches_gifts", "fashion_bags_accessories", "luggage_accessories", "fashion_shoes", 
-                                                      "fashion_male_clothing", "fashion_female_clothing", "fashion_childrens_clothes", 
-                                                      "fashion_underwear_beach") ~ "Clothing",
-                              product_category %in% c("cool_stuff", "construction_tools_construction", "home_construction", "construction_tools_lights", 
-                                                      "construction_tools_safety", "arts_and_craftmanship", "costruction_tools_tools") ~ "DIY Goods",
-                              product_category %in% c("computers_accessories", "telephony", "computers", "electronics", "consoles_games", 
-                                                      "fixed_telephony", "air_conditioning", "tablets_printing_image", "cine_photo") ~ "Eletrical Goods",
-                              product_category %in% c("food_drink", "la_cuisine", "flowers") ~ "Food.Consumables", 
-                              product_category %in% c("furniture_decor", "office_furniture", "furniture_living_room", "home_comfort", 
-                                                      "kitchen_dining_laundry_garden_furniture", "small_appliances_home_oven_and_coffee", 
-                                                      "furniture_bedroom", "furniture_mattress_and_upholstery") ~ "Furniture.Carpets",
-                              product_category %in% c("garden_tools", "costruction_tools_garden") ~ "Garden Products", 
-                              product_category %in% c("bed_bath_table", "housewares", "auto", "toys", "baby", "stationery", "pet_shop",
-                                                      "pet_shop", "home_appliances", "small_appliances", "party_supplies", "christmas_supplies") ~ "Household.Textiles", 
-                              product_category %in% c("musical_instruments", "audio", "cds_dvds_musicals", "dvds_blu_ray", "music", "books_imported", 
-                                                      "books_technical", "books_general_interest") ~ "Music, Films.Books",
-                              product_category %in% c("sports_leisure", "fashion_sport") ~ "Sports Equipments", 
-                              product_category %in% c("market_place", "agro_industry_and_commerce", "industry_commerce_and_business", "signaling_and_security",
-                                                      "security_and_services") ~ "Services", 
-                              TRUE ~ "Other")) %>%
-  group_by(purchase_date, category) %>%
-  summarise(sales = sum(value)) %>%
-  bind_rows(time_df2) %>%
-  spread(key = "category", value = "sales")
