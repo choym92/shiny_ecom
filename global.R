@@ -1,17 +1,47 @@
-library(plyr)
 library(ggplot2)
-library(data.table)
 library(shiny)
 library(leaflet)
 library(DT)
 library(shinydashboard)
 library(dplyr)
-library(shinythemes)
+library(shinyWidgets)
+library(data.table)
+library(leaflet)
+library(sp)
+library(tmap)
+library(tidyr)
+library(lubridate)
+library(ggmap)
+library(corrplot)
+library(ggpubr)
+library(scales)
+library(DT)
+library(rsconnect)
 
 # setwd('C:/Users/Paul Cho/Desktop/Bootcamp/Project/Shiny_e_com')
-geo_df <- fread("./datasets/olist_geolocation_dataset.csv", header=TRUE)
 po_master<- fread("./datasets/po_master.csv", header=TRUE)
-choice <- colnames(geo_df)
+LTtype <- c('POtoSO','SOtoDO','SOtoGI','GItoGR','POtoRDD','POtoGR')
+#Brazil States
+as.vector(t(po_master %>% distinct(c_state))) -> BRstates
+as.vector(t(po_master %>% distinct(delivered_year) %>% arrange(delivered_year))) -> Years
+as.vector(t(po_master %>% distinct(product_category))) -> category
+
+# Lead time analysis --------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 po_master %>% 

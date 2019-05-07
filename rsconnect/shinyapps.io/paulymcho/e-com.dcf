@@ -1,0 +1,13 @@
+name: e-com
+title: e-com
+username:
+account: paulymcho
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 913008
+bundleId: 2066018
+url: https://paulymcho.shinyapps.io/e-com/
+when: 1557218095.07116
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData|brazil_e_com.R|datasets2
